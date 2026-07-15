@@ -168,12 +168,14 @@ function ScoreLinkWithProfile({
   score,
   private_profile_id,
   submission_id,
+  submitted_via,
   course_id,
   assignment_id
 }: {
   score: number | null | undefined;
   private_profile_id: string;
   submission_id: number | null | undefined;
+  submitted_via: string | null | undefined;
   course_id: string;
   assignment_id: string;
 }) {
@@ -183,27 +185,50 @@ function ScoreLinkWithProfile({
     return <Skeleton w="50px" h="1em" />;
   }
   const label = score !== null && score !== undefined ? score : "—";
+  const isNonSubmission = submission_id != null && submitted_via === "manual";
+  const indicator = isNonSubmission ? (
+    <Tooltip content="Non-submission (manual grade)">
+      <Text as="span" fontSize="xs" color="fg.muted" cursor="help">
+        NS
+      </Text>
+    </Tooltip>
+  ) : null;
   if (submission_id == null) {
     return <Text fontSize="inherit">{label}</Text>;
   }
-  return <Link href={`/course/${course_id}/assignments/${assignment_id}/submissions/${submission_id}`}>{label}</Link>;
+  return (
+    <HStack as="span" gap={1}>
+      <Link href={`/course/${course_id}/assignments/${assignment_id}/submissions/${submission_id}`}>{label}</Link>
+      {indicator}
+    </HStack>
+  );
 }
 
 function ScoreLink({
   score,
   private_profile_id,
   submission_id,
+  submitted_via,
   course_id,
   assignment_id
 }: {
   score: number | null | undefined;
   private_profile_id: string | null | undefined;
   submission_id: number | null | undefined;
+  submitted_via: string | null | undefined;
   course_id: string;
   assignment_id: string;
 }) {
   const isObfuscated = useObfuscatedGradesMode();
   const label = score !== null && score !== undefined ? score : "—";
+  const isNonSubmission = submission_id != null && submitted_via === "manual";
+  const indicator = isNonSubmission ? (
+    <Tooltip content="Non-submission (manual grade)">
+      <Text as="span" fontSize="xs" color="fg.muted" cursor="help">
+        NS
+      </Text>
+    </Tooltip>
+  ) : null;
   if (!private_profile_id) {
     if (isObfuscated) {
       return <Skeleton w="50px" h="1em" />;
@@ -211,13 +236,19 @@ function ScoreLink({
     if (submission_id == null) {
       return <Text fontSize="inherit">{label}</Text>;
     }
-    return <Link href={`/course/${course_id}/assignments/${assignment_id}/submissions/${submission_id}`}>{label}</Link>;
+    return (
+      <HStack as="span" gap={1}>
+        <Link href={`/course/${course_id}/assignments/${assignment_id}/submissions/${submission_id}`}>{label}</Link>
+        {indicator}
+      </HStack>
+    );
   }
   return (
     <ScoreLinkWithProfile
       score={score}
       private_profile_id={private_profile_id}
       submission_id={submission_id}
+      submitted_via={submitted_via}
       course_id={course_id}
       assignment_id={assignment_id}
     />
@@ -284,6 +315,7 @@ function TotalScoreCellUnknownStudent({
         score={displayScore}
         private_profile_id={undefined}
         submission_id={row.original.activesubmissionid}
+        submitted_via={row.original.submitted_via}
         course_id={course_id}
         assignment_id={assignment_id}
       />
@@ -336,6 +368,7 @@ function TotalScoreCellWithStudent({
         score={displayScore}
         private_profile_id={studentId}
         submission_id={row.original.activesubmissionid}
+        submitted_via={row.original.submitted_via}
         course_id={course_id}
         assignment_id={assignment_id}
       />
@@ -652,6 +685,7 @@ export default function AssignmentsTable({
               score={props.getValue() as number | null | undefined}
               private_profile_id={props.row.original.student_private_profile_id}
               submission_id={props.row.original.activesubmissionid}
+              submitted_via={props.row.original.submitted_via}
               course_id={course_id as string}
               assignment_id={assignment_id as string}
             />

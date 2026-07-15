@@ -65,6 +65,8 @@ export type ActiveSubmissionsWithGradesForAssignment =
      * active submission (`activesubmissionid` is null).
      */
     assignment_group_id?: number | null;
+    /** Present on `submissions_with_grades_for_assignment_nice`. Source of submission creation. */
+    submitted_via?: string | null;
   };
 export type ActiveSubmissionsWithRegressionTestResults =
   Database["public"]["Views"]["submissions_with_grades_for_assignment_and_regression_test"]["Row"] & {
