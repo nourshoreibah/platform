@@ -74,7 +74,7 @@ test.describe("Gradebook: graded non-submitters read as missing (#644)", () => {
         .invoke("gradebook-column-recalculate", { headers: { "x-edge-function-secret": edgeSecret } })
         .catch(() => {});
     }
-    await supabase.rpc("invoke_gradebook_recalculation_background_task").catch(() => {});
+    await supabase.rpc("invoke_gradebook_recalculation_background_task");
   }
 
   /** Resolve the auto-created gradebook column for an assignment (dependencies.assignments contains its id). */

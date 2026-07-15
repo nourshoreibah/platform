@@ -5,7 +5,13 @@ import { useColorMode } from "@/components/ui/color-mode";
 //
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCanShowGradeFor } from "@/hooks/useCourseController";
-import { useGradebookColumn, useGradebookColumnStudent, useGradebookController } from "@/hooks/useGradebook";
+import {
+  isGradedNonSubmission,
+  NOT_SUBMITTED_MARKER,
+  useGradebookColumn,
+  useGradebookColumnStudent,
+  useGradebookController
+} from "@/hooks/useGradebook";
 import { IncompleteValuesAdvice } from "@/hooks/useGradebookWhatIf";
 import { Box, Float, HStack, Heading, Icon, Text, VStack } from "@chakra-ui/react";
 import { memo, useCallback, useId, useRef, useState } from "react";
@@ -108,6 +114,9 @@ export default function GradebookCell({ columnId, studentId }: { columnId: numbe
     }
     if (studentGradebookColumn?.incomplete_values) {
       scoreAdvice = `${scoreAdvice ? scoreAdvice + "\n" : ""}This calculated column is missing these values: ${IncompleteValuesList(studentGradebookColumn.incomplete_values as IncompleteValuesAdvice)}`;
+    }
+    if (studentGradebookColumn && isGradedNonSubmission(column, studentGradebookColumn)) {
+      scoreAdvice = `${scoreAdvice ? scoreAdvice + "\n" : ""}Marked with ${NOT_SUBMITTED_MARKER}: graded without a submission — this student never submitted.`;
     }
   }
   const isSpecial =

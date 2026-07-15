@@ -1380,6 +1380,32 @@ type RendererParams = {
   is_droppable: boolean;
   released: boolean;
 };
+
+/**
+ * Suffix appended to an assignment cell's score when the student was graded
+ * without ever submitting (a #644 non-submitter stub). Keeps the assigned score
+ * visible (e.g. `0*`) while flagging that it was not earned on a real
+ * submission. Exported so the cell UI can explain the marker in a tooltip.
+ */
+export const NOT_SUBMITTED_MARKER = "*";
+
+/** True when this gradebook column derives its score from one or more assignments. */
+function isAssignmentColumn(column: GradebookColumn): boolean {
+  return Boolean((column.dependencies as { assignments?: number[] } | null)?.assignments?.length);
+}
+
+/**
+ * A missing assignment cell that still carries a score is a graded non-submitter
+ * (issue #644): the score should stay visible with a marker rather than being
+ * hidden behind "Missing". "Missing" is reserved for cells with no score.
+ */
+export function isGradedNonSubmission(
+  column: GradebookColumn,
+  cell: { is_missing: boolean; score: number | null; score_override: number | null }
+): boolean {
+  const effectiveScore = cell.score_override ?? cell.score;
+  return cell.is_missing && isAssignmentColumn(column) && effectiveScore !== null && effectiveScore !== undefined;
+}
 export class GradebookController {
   private _studentDetailView: string | null = null;
   private studentDetailViewSubscribers: ((view: string | null) => void)[] = [];
@@ -1884,29 +1910,34 @@ export class GradebookController {
       const expr = math.parse(theRenderExpression);
       const compiled = expr.compile();
       const cache = new Map<string, string>();
+      const renderScore = (score: number, max_score: number | null): string => {
+        const ret = compiled.evaluate({ score, max_score });
+        if (typeof ret === "object" && "entries" in ret) {
+          // Return just the last result
+          return ret.entries[ret.entries.length - 1];
+        }
+        return ret;
+      };
       const Renderer = (cell: RendererParams) => {
         try {
+          const effectiveScore = cell.score_override ?? cell.score;
           if (cell.is_missing) {
+            // Graded non-submitter (issue #644): keep the score visible with a
+            // marker (e.g. `0*`) so it is distinguishable from an earned score.
+            // "Missing" is reserved for missing cells that carry no score.
+            if (isGradedNonSubmission(column, cell)) {
+              return `${renderScore(effectiveScore as number, cell.max_score)}${NOT_SUBMITTED_MARKER}`;
+            }
             return "Missing";
           }
-          if ((cell.score_override ?? cell.score) === null || (cell.score_override ?? cell.score) === undefined) {
+          if (effectiveScore === null || effectiveScore === undefined) {
             return "-";
           }
           const key = JSON.stringify(cell);
           if (cache.has(key)) {
             return cache.get(key)!;
           }
-          const ret = compiled.evaluate({
-            score: cell.score_override ?? cell.score,
-            max_score: cell.max_score
-          });
-          let renderedVal: string;
-          if (typeof ret === "object" && "entries" in ret) {
-            //Return just the last result
-            renderedVal = ret.entries[ret.entries.length - 1];
-          } else {
-            renderedVal = ret;
-          }
+          const renderedVal = renderScore(effectiveScore, cell.max_score);
           cache.set(key, renderedVal);
           return renderedVal;
         } catch {
