@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { all, ConstantNode, create, EvalFunction, FunctionNode, MathNode } from "mathjs";
+import { all, ConstantNode, create, EvalFunction, FunctionNode, MathJsInstance, MathNode } from "mathjs";
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import type { Database } from "../_shared/SupabaseTypes.d.ts";
 import {
   addDependencySourceFunctions,
+  AssignmentsDependencySource,
   ContextFunctions,
   ExprDependencyInstance,
   ExpressionContext,
@@ -120,6 +121,32 @@ function nearlyEqual(a: number | null, b: number | null, eps = 1e-9): boolean {
 
 function isInstructorOnlyColumn(column: ColumnWithPrefix): boolean {
   return Boolean(column.instructor_only);
+}
+
+/**
+ * An assignment-linked gradebook column should read as "missing" when the
+ * student's active submission for every assignment the column depends on is a
+ * content-less instructor-created stub ("grade anyway" on a non-submitter).
+ * This distinguishes "earned a 0" from "never submitted, graded anyway" (#644).
+ *
+ * `math._batchDependencySourceMap` is populated by addDependencySourceFunctions
+ * for the current batch; its `assignments` source resolves the non-submission
+ * flag per (assignment, student) from the recalculation view. Returns false for
+ * non-assignment columns, or columns whose dependencies mix submitted and
+ * non-submitted assignments (ambiguous — left to the score-based logic).
+ */
+function isNonSubmissionForColumn(
+  math: MathJsInstance,
+  column: { dependencies?: unknown },
+  student_id: string
+): boolean {
+  const batchDependencySourceMap = (math as unknown as Record<string, unknown>)._batchDependencySourceMap as
+    | Record<string, unknown>
+    | undefined;
+  const assignmentsSource = batchDependencySourceMap?.["assignments"] as AssignmentsDependencySource | undefined;
+  const assigns = (column.dependencies as { assignments?: number[] } | null)?.assignments ?? null;
+  if (!assignmentsSource || !assigns || assigns.length === 0) return false;
+  return assigns.every((aid) => assignmentsSource.isNonSubmission(aid, student_id));
 }
 
 type GradebookCellRequest = {
@@ -628,6 +655,12 @@ export async function processGradebookRowCalculation(
       continue;
     }
 
+    // A graded non-submitter (instructor-created stub) reads as missing so it is
+    // distinguishable from an earned score in the gradebook (#644).
+    if (isNonSubmissionForColumn(math, column, student_id)) {
+      isMissing = true;
+    }
+
     const overrideScore = (current?.score_override as number | null) ?? null;
     if (overrideScore !== null) {
       isMissing = false;
@@ -958,6 +991,11 @@ export async function processGradebookRowsCalculation(
       if (DEBUG_LOG) {
         console.log(`nextScore: ${nextScore}`);
       }
+      // A graded non-submitter (instructor-created stub) reads as missing so it
+      // is distinguishable from an earned score in the gradebook (#644).
+      if (isNonSubmissionForColumn(math, column, student_id)) {
+        isMissing = true;
+      }
       const overrideScore = (current?.score_override as number | null) ?? null;
       if (overrideScore !== null) {
         isMissing = false;
@@ -1211,10 +1249,16 @@ async function processCellBatch(
             isReleased = (column as unknown as { released: boolean | null }).released ?? false;
           }
 
+          // A graded non-submitter (instructor-created stub) reads as missing so it
+          // is distinguishable from an earned score in the gradebook (#644). Kept
+          // separate from `isMissing` above so release status is computed as for a
+          // normal graded cell.
+          const effectiveMissing = isMissing || isNonSubmissionForColumn(math, column, cell.student_id);
+
           const { error: updateError } = await adminSupabase
             .from("gradebook_column_students")
             .update({
-              is_missing: isMissing,
+              is_missing: effectiveMissing,
               score,
               incomplete_values: incompleteValues,
               is_recalculating: false,
@@ -1226,7 +1270,7 @@ async function processCellBatch(
             const newScope = scope.clone();
             newScope.setContext("cell", cell);
             newScope.setContext("update_data", {
-              is_missing: isMissing,
+              is_missing: effectiveMissing,
               score,
               incomplete_values: incompleteValues,
               is_recalculating: false,

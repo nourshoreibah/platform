@@ -11488,6 +11488,7 @@ export type Database = {
           assignment_slug: string | null;
           class_id: number | null;
           individual_scores: Json | null;
+          is_non_submission: boolean | null;
           per_student_grading_totals: Json | null;
           scores_by_round_private: Json | null;
           scores_by_round_public: Json | null;

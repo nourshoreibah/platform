@@ -204,7 +204,7 @@ abstract class DependencySourceBase implements DependencySource {
   }
 }
 
-class AssignmentsDependencySource extends DependencySourceBase {
+export class AssignmentsDependencySource extends DependencySourceBase {
   getFunctionNames(): string[] {
     return ["assignments"];
   }
@@ -215,6 +215,13 @@ class AssignmentsDependencySource extends DependencySourceBase {
     return matchingAssignments.map((assignment) => assignment.slug ?? "ERROR");
   }
   private assignmentMap: Map<number, Assignment> = new Map();
+  // Tracks whether a student's active submission for an assignment is a
+  // content-less instructor-created stub
+  private nonSubmissionByAssignmentStudent: Map<string, boolean> = new Map();
+
+  isNonSubmission(assignmentId: number, studentId: string): boolean {
+    return this.nonSubmissionByAssignmentStudent.get(`${assignmentId}:${studentId}`) ?? false;
+  }
 
   // Execute with optional review round argument. Defaults to 'grading-review'.
   override execute({
@@ -284,6 +291,7 @@ class AssignmentsDependencySource extends DependencySourceBase {
       scores_by_round_public: Record<string, number | null> | null;
       individual_scores: Partial<Record<string, number>> | null;
       per_student_grading_totals: Partial<Record<string, number>> | null;
+      is_non_submission: boolean | null;
     };
 
     const allRows: ReviewsByRoundRow[] = [];
@@ -295,7 +303,7 @@ class AssignmentsDependencySource extends DependencySourceBase {
       let query = supabase
         .from("submissions_with_reviews_by_round_for_assignment")
         .select(
-          "assignment_id, class_id, student_private_profile_id, assignment_slug, scores_by_round_private, scores_by_round_public, individual_scores, per_student_grading_totals"
+          "assignment_id, class_id, student_private_profile_id, assignment_slug, scores_by_round_private, scores_by_round_public, individual_scores, per_student_grading_totals, is_non_submission"
         )
         .in("assignment_id", assignmentIds);
       // Only filter by students when the set is reasonably small to avoid exceeding IN limits
@@ -321,6 +329,13 @@ class AssignmentsDependencySource extends DependencySourceBase {
     for (const row of allRows) {
       if (!students.has(row.student_private_profile_id)) continue;
       const slug = row.assignment_slug ?? this.assignmentMap.get(row.assignment_id)?.slug ?? "";
+      // Record non-submission status outside the numeric score maps below (those
+      // are consumed as round-scores by the expression evaluator; a boolean there
+      // would corrupt score computation).
+      this.nonSubmissionByAssignmentStudent.set(
+        `${row.assignment_id}:${row.student_private_profile_id}`,
+        row.is_non_submission === true
+      );
       const privateByRound: Record<string, number | undefined> = {};
       const publicByRound: Record<string, number | undefined> = {};
       if (row.scores_by_round_private) {
@@ -400,8 +415,8 @@ class GradebookColumnsDependencySource extends DependencySourceBase {
       const readOverride = (slug: string) => overrides.get(slug);
       const readBase = (slug: string) =>
         super.execute({ function_name, context, key: slug, class_id }) as
-          | GradebookColumnStudentWithMaxScore
-          | undefined;
+        | GradebookColumnStudentWithMaxScore
+        | undefined;
       const resolveValue = (slug: string) => {
         const overrideVal = readOverride(slug);
         const baseVal = readBase(slug);
